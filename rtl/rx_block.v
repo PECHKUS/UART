@@ -1,80 +1,278 @@
-module uart_receiver(input clk, rst, rx , rdy_cr, clk_en, output reg rdy, output reg [7:0] data_out);
+//`timescale 1ns / 1ps
+////////////////////////////////////////////////////////////////////////////////////
+//// 
+//// Engineer: Parnavo Pal
+//// 
+//// Create Date: 15.02.2026 11:15:05
+//// Design Name: UART Receiver
+//// Module Name: rx
+//// Project Name: UART Universal IP
+//// Target Devices: Any FPGA
+//// Tool Versions: Vivado
+//// Description: 
+////   UART Receiver with 16x oversampling.
+////   Receives frame:
+////      1 Start bit
+////      8 Data bits (LSB first)
+////      1 Stop bit
+////
+//// Interface:
+////   rx       : Serial input line
+////   rx_en    : 16x baud enable pulse
+////   rx_data  : Received byte
+////   rx_valid : 1-clock pulse when byte received
+////
+////////////////////////////////////////////////////////////////////////////////////
 
-parameter start_state = 2'b00;
-parameter data_out_state = 2'b01;
-parameter stop_state = 2'b10;
+//module rx #(
+//    parameter DATA_BITS = 8
+//)(
+//    input  wire clk,
+//    input  wire rst,
+//    input  wire rx,
+//    input  wire rx_en,          // 16x baud enable
+//    output reg  [DATA_BITS-1:0] rx_data,
+//    output reg  rx_valid
+//);
 
-reg[1:0] state = start_state;
-reg[3:0] sample = 0;
-reg[2:0] index = 0;
-reg[7:0] remp_register = 8'b0;
+//     // here the state encoding happens which tracks the state of the uart module for rx
+//    localparam IDLE  = 2'b00;
+//    localparam START = 2'b01;
+//    localparam DATA  = 2'b10;
+//    localparam STOP  = 2'b11;
+
+//    reg [1:0] state = IDLE;
+
+//    // internal register 
+//    reg [3:0] sample_count;     // counts 0–15 (16x oversampling)
+//    reg [$clog2(DATA_BITS):0] bit_index;
+//    reg [DATA_BITS-1:0] data_reg;
+
+//      // sequential logic making starts here 
+//    always @(posedge clk) begin
+//        if (rst) begin
+//            state        <= IDLE;
+//            sample_count <= 0;
+//            bit_index    <= 0;
+//            data_reg     <= 0;
+//            rx_data      <= 0;
+//            rx_valid     <= 0;
+//        end
+//        else begin
+//            rx_valid <= 0;   // default (1-cycle pulse)
+
+//            if (rx_en) begin   // operate only at 16x baud
+//                case (state)
+
+//                    // when in idle state 
+//                    IDLE: begin
+//                        sample_count <= 0;
+//                        bit_index    <= 0;
+
+//                        if (rx == 1'b0) begin   // detect start bit
+//                            state <= START;
+//                        end
+//                    end
+
+//                    // indicates start bit 
+//                    START: begin
+//                        if (sample_count == 7) begin
+//                            if (rx == 1'b0) begin
+//                                sample_count <= 0;
+//                                state <= DATA;
+//                            end
+//                            else begin
+//                                state <= IDLE;  // false start
+//                            end
+//                        end
+//                        else begin
+//                            sample_count <= sample_count + 1;
+//                        end
+//                    end
+
+//                    //indicates data bits
+////                    DATA: begin
+////                        if (sample_count == 15) begin
+////                            sample_count <= 0;
+
+////                            data_reg[bit_index] <= rx;
+////                            bit_index <= bit_index + 1;
+
+////                            if (bit_index == DATA_BITS-1) begin
+////                                state <= STOP;
+////                            end
+////                        end
+////                        else begin
+////                            sample_count <= sample_count + 1;
+////                        end
+////                    end
+//// copilot changes only the data one 
+//                    DATA: begin
+//                            if (sample_count == 15) begin
+//                                sample_count <= 0;
+//                                data_reg[bit_index] <= rx;
+        
+//                            if (bit_index == DATA_BITS-1) begin
+//                                state <= STOP;
+//                            end
+//                            else begin
+//                                 bit_index <= bit_index + 1;
+//                            end
+//                            end
+//                            else begin
+//                                sample_count <= sample_count + 1;
+//                            end
+//                        end
+//                    // indicates stop bit
+//                    STOP: begin
+//                        if (sample_count == 15) begin
+//                            state <= IDLE;
+//                            rx_data  <= data_reg;
+//                            rx_valid <= 1'b1;  // byte received
+//                            sample_count <= 0;
+//                        end
+//                        else begin
+//                            sample_count <= sample_count + 1;
+//                        end
+//                    end
+
+//                endcase
+//            end
+//        end
+//    end
+
+//endmodule
 
 
-always@(posedge clk)
-    begin   
-        if(rst) begin
-                rdy = 0;
-                data_out = 0;
-                end
 
-        always@(posedge clk)
-            begin
-                if(rdy_clr)
-                    rdy <= 0 ;
-                if(clk_en)
-                    case(state) begin
-                        start_state : begin
+`timescale 1ns / 1ps
 
-                            if(rx == 0 && sample != 0)
-                                sample <= sample + 1'b1;
-                            if(sample == 15) begin 
-                                begin   
-                                    state <= data_out_state;
-                                    sample <= 0;
-                                    index <= 0;
-                                    temp_register <= 0;
-                                end
+module rx #(
+    parameter DATA_BITS = 8
+)(
+    input  wire clk,
+    input  wire rst,
+    input  wire rx,
+    input  wire rx_en,          // 16x baud enable
+    output reg  [DATA_BITS-1:0] rx_data,
+    output reg  rx_valid,
+    output reg  rx_error        //  framing error flag
+);
+
+  
+    // state machine
+  
+    localparam IDLE  = 2'b00;
+    localparam START = 2'b01;
+    localparam DATA  = 2'b10;
+    localparam STOP  = 2'b11;
+
+    reg [1:0] state = IDLE;
+
+    // internal registers 
+    reg [3:0] sample_count;     // counts 0-15 (16x oversampling)
+    reg [$clog2(DATA_BITS):0] bit_index;
+    reg [DATA_BITS-1:0] data_reg;
+
+   
+    // sequential Logic
+    always @(posedge clk) begin
+        if (rst) begin
+            state        <= IDLE;
+            sample_count <= 0;
+            bit_index    <= 0;
+            data_reg     <= 0;
+            rx_data      <= 0;
+            rx_valid     <= 0;
+            rx_error     <= 0;   //initialize error flag
+        end
+        else begin
+            rx_valid <= 0;   // default (1-cycle pulse)
+            rx_error <= 0;   // default (1-cycle pulse)
+
+            if (rx_en) begin   // operate only at 16x baud
+                case (state)
+
+                    //   IDLE state 
+                    IDLE: begin
+                        sample_count <= 0;
+                        bit_index    <= 0;
+
+                        if (rx == 1'b0) begin   // detect start bit (LOW)
+                            state <= START;
+                        end
+                    end
+
+                    //   START State: verify start bit duration 
+                    START: begin
+                        if (sample_count == 7) begin
+                            // sample at mid-point to verify start bit
+                            if (rx == 1'b0) begin
+                                sample_count <= 0;
+                                state <= DATA;  // valid start bit detected
                             end
-                        
-                        data_out_state : begin 
-
-                            sample <= sample + 1'b1;
-
-                            if(sample == 4'h8)
-                                begin 
-                                    temp_register[index] <= rx;
-                                    index <= index + 1,b1;
-                                end
-
-                            if(index == 8 && sample == 15)
-                                state <= stop_state;
+                            else begin
+                                state <= IDLE;  // false start bit - return to IDLE
                             end
+                        end
+                        else begin
+                            sample_count <= sample_count + 1;
+                        end
+                    end
 
-                        stop_state : begin
+                    //DATA State: Capture 8 bits
+                    DATA: begin
+                        if (sample_count == 15) begin
+                            sample_count <= 0;
 
-                            if(sample == 15)
-                                begin
-                                    sta <= start_state;
-                                    data_out <= temp_register;
-                                    rdy <= 0;
-
-                                end
+                            data_reg[bit_index] <= rx;  // capture bit at sample_count=15 (near end of bit)
                             
-                            else 
-                                sample = sample + 1'b1;
+                            if (bit_index == DATA_BITS-1) begin
+                                state <= STOP;  // move to STOP bit
                             end
-
-                            default : begin 
-                                state <= start_state;
+                            else begin
+                                bit_index <= bit_index + 1;  // next data bit
                             end
-                    endcase 
+                        end
+                        else begin
+                            sample_count <= sample_count + 1;
+                        end
+                    end
 
-    end 
+                    // STOP state: verify stop bit 
+                    STOP: begin
+                        if (sample_count == 15) begin
+                            // sample stop bit at mid-point (sample_count=15 is close to center)
+                            
+                            if (rx == 1'b1) begin
+                                //  valid stop bit (HIGH)
+                                state <= IDLE;
+                                rx_data  <= data_reg;
+                                rx_valid <= 1'b1;  // signal: byte received successfully
+                            end
+                            else begin
+                                // ✗ framing Error: stop bit is LOW (should be HIGH)
+                                state <= IDLE;
+                                rx_error <= 1'b1;  //signal: framing error
+                            
+                            end
+                            
+                            sample_count <= 0;
+                            bit_index <= 0;
+                        end
+                        else begin
+                            sample_count <= sample_count + 1;
+                        end
+                    end
+
+                    // Default: return to IDLE
+                    default: begin
+                        state <= IDLE;
+                    end
+
+                endcase
+            end
+        end
+    end
 
 endmodule
-
-
-                        
-
-
-
